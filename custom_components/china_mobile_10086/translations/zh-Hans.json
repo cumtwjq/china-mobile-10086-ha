@@ -2,38 +2,53 @@
   "config": {
     "step": {
       "user": {
-        "title": "中国移动10086",
-        "description": "粘贴本地抓包工具复制的只读请求 JSON。",
-        "data": {
-          "request_json": "只读请求 JSON"
-        }
+        "title": "登录中国移动10086",
+        "description": "请先安装并启动“中国移动10086浏览器” HAOS 加载项。输入手机号后，加载项将在中国移动官方网页请求短信验证码。",
+        "data": {"phone": "手机号"}
+      },
+      "code": {
+        "title": "输入短信验证码",
+        "description": "请输入中国移动发送的验证码；验证码只用于本次官方网页登录，不会存入集成配置。",
+        "data": {"code": "短信验证码"}
+      },
+      "reauth_confirm": {
+        "title": "重新登录中国移动10086",
+        "description": "当前网页登录已失效。确认手机号，系统会重新发送短信验证码并保留现有设备和实体。",
+        "data": {"phone": "手机号"}
       }
     },
     "error": {
-      "invalid_capture": "请求格式无效",
-      "invalid_auth": "登录已失效，请重新抓取",
-      "service_unavailable": "接口返回升级公告，请检查登录会话或稍后重试",
-      "cannot_connect": "无法读取账号数据，请检查网络或重新抓取"
+      "invalid_phone": "请输入有效的 11 位手机号",
+      "invalid_code": "验证码格式不正确或已失效",
+      "app_not_running": "HAOS 浏览器加载项未运行，请先安装并启动",
+      "app_timeout": "浏览器加载项未及时响应，请查看加载项日志",
+      "manual_required": "网页要求额外验证，请打开加载项界面操作浏览器",
+      "send_failed": "中国移动未发送验证码，可能请求过于频繁；请稍后再试",
+      "login_failed": "网页登录失败，请核对页面提示或重试"
     },
-    "abort": {
-      "already_configured": "此账号已配置"
-    }
+    "abort": {"already_configured": "此账号已配置"}
   },
   "options": {
     "step": {
       "init": {
-        "title": "更新中国移动登录请求",
-        "description": "粘贴重新抓取的只读请求 JSON。",
-        "data": {
-          "request_json": "新的只读请求 JSON"
-        }
+        "title": "重新登录中国移动10086",
+        "description": "输入手机号以重新请求短信验证码。",
+        "data": {"phone": "手机号"}
+      },
+      "code": {
+        "title": "输入短信验证码",
+        "description": "请输入中国移动发送的验证码。",
+        "data": {"code": "短信验证码"}
       }
     },
     "error": {
-      "invalid_capture": "请求格式无效",
-      "invalid_auth": "登录已失效，请重新抓取",
-      "service_unavailable": "接口返回升级公告，请检查登录会话或稍后重试",
-      "cannot_connect": "无法读取账号数据，请检查网络或重新抓取"
+      "invalid_phone": "请输入有效的 11 位手机号",
+      "invalid_code": "验证码格式不正确或已失效",
+      "app_not_running": "HAOS 浏览器加载项未运行，请先安装并启动",
+      "app_timeout": "浏览器加载项未及时响应，请查看加载项日志",
+      "manual_required": "网页要求额外验证，请打开加载项界面操作浏览器",
+      "send_failed": "中国移动未发送验证码，可能请求过于频繁；请稍后再试",
+      "login_failed": "网页登录失败，请核对页面提示或重试"
     }
   }
 }

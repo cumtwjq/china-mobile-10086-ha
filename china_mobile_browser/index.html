@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<script>
+  let base = location.pathname;
+  if (base.endsWith("/index.html")) {
+    base = base.slice(0, -"index.html".length);
+  } else if (!base.endsWith("/")) {
+    base += "/";
+  }
+  const path = base.replace(/^\/+/, "") + "websockify";
+  const query = new URLSearchParams({autoconnect: "1", resize: "scale", path});
+  location.replace(base + "vnc.html?" + query);
+</script>

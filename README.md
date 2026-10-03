@@ -1,35 +1,27 @@
-# 中国移动10086 Home Assistant 集成（实验版）
+# 中国移动10086 Home Assistant 集成（HAOS 浏览器实验版）
 
-从自己的“中国移动10086”微信服务号读取话费、流量和通话余量，集成每 30 分钟尝试更新一次。所有网络请求都是只读的；不会充值、订购、退订或修改账号。
+此版本以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor) 的持久化 Chromium 查询方式为基础。**在 Home Assistant 集成界面输入手机号和短信验证码**；HAOS 加载项在后台操作中国移动官方网页登录页，之后复用浏览器状态查询话费、流量和通话余量。电脑不需要一直开机，也不需要手机代理抓包或粘贴请求 JSON。官网出现滑块等额外验证时，可打开加载项的远程浏览器完成。
 
-> **当前限制：** 微信服务号会话可能在下一次轮询前失效。实测旧请求中的 `d.sid` 失效后，三个查询接口均返回“升级公告”页面；重新抓取的新 `d.sid` 可恢复查询。当前集成没有自动续期方式，不能保证持续每 30 分钟更新。遇到传感器“不可用”且微信内仍可查询时，请重新抓取并在集成“配置”中导入新请求。缩短轮询间隔不能延长会话有效期。
+> 真实账号尚未完成端到端验证。上游浏览器方案也说明：登录状态失效时仍需重新验证。此版不会自动读取短信验证码，不能承诺长期免登录。查询只读取账号数据，不执行充值、订购或退订。
 
-## 在 Home Assistant 中的效果
+## 安装
 
-下图是设备页面，可查看话费余额及各类流量的剩余量、已用量和总量。截图中的数值仅为展示时的账号状态。
+参见 [安装和测试说明](INSTALL.md)。需要同时安装：
 
-![中国移动10086 集成在 Home Assistant 中的设备页面](image/ha-device-overview.png)
+1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.3/china_mobile_10086-experimental.zip)。
+2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.3/china_mobile_10086-haos-app.zip)。
 
-## 下载与安装
+先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。登录会话保存在 HAOS 加载项 `/data/browser_profile`，不会写进集成配置；查询值经 HAOS `/share/china_mobile_10086/account.json` 共享给集成。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
 
-从 [Releases](https://github.com/cumtwjq/china-mobile-10086-ha/releases/latest) 下载：
+## 查询和失效提示
 
-- `china_mobile_10086-experimental.zip`：Home Assistant 集成安装包。
-- `china_mobile_10086-local-capture.zip`：Windows 本地抓取工具，包含 Python 和 mitmproxy，无需另外安装。
+- 加载项每 **30 分钟**打开已登录的中国移动页面查询；登录成功后会立即首次查询。
+- 集成每 **1 分钟**读取加载项的最新结果。
+- “浏览器登录状态”为 `ok` 时，数值可用；`authenticating` 表示短信登录正在进行；`login_required` 时 HA 会提示“重新认证”，在集成界面输入新的短信验证码；`query_failed` 表示官方页面显示升级公告或未返回可识别数据；`waiting_for_app` 或 `stale` 表示加载项未运行或长时间没有更新。
+- 从旧版升级时，旧抓包请求会从集成配置中移除；登录需使用当前的短信验证流程。
 
-按[安装说明](INSTALL.md)安装。首次配置用[本地抓取工具](local_tool/本地抓取说明.md)获取自己账号的只读请求 JSON，并粘贴到 HA 配置页。仓库和下载包不包含个人抓包数据、Cookie 或 CSRF 凭证。
+目前从页面提取话费余额、总/通用/定向/其他流量的余量、已用量和总量，以及通话余量、已用量和总量。已用流量为 MB，余量和总量为 GB。接口没有返回的字段会显示为不可用，不会用旧值填充。
 
-## 传感器
+## 来源与鸣谢
 
-- 话费余额。
-- 总流量、国内通用流量、国内其他流量的剩余量、已用量和总量。
-- 剩余通话、已用通话、通话总量。
-- 每个流量套餐的剩余量；总量、已用量和到期日放在传感器属性中。
-
-单位按服务号页面脚本核对：流量接口的单位代码 `1` 为 MB，HA 中的 GB 以 1024 MB 换算。登录凭证失效后，在集成的“配置”中导入新的本地抓取请求。
-
-登录请求没有可读取的固定有效期；失效后重新抓取。三个只读查询接口不会签发新的 `d.sid`，因此目前无法从已抓取的请求自动续期。`wx.10086.cn` 对部分 Python TLS 客户端只提供旧版 TLS 1.2 密码套件，本集成仅对该域名使用兼容配置，仍校验证书。
-
-## 鸣谢
-
-感谢 **Codex** 全程指导、编写代码并整理文档；感谢账号持有人提供实际数据并在 Home Assistant 中验证集成效果。
+浏览器登录、持久化浏览器状态和查询接口以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor)（MIT License）为基础，其许可文本随加载项一同提供；配置与重新认证交互参考 [Shaobo-Pocket-Carrier](https://github.com/Shaobor/Shaobo-Pocket-Carrier)（MIT License），未使用其联通、电信接口。感谢 **Codex** 全程指导、编写代码并整理文档；感谢账号持有人提供实际数据并在 Home Assistant 中测试。
