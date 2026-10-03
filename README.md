@@ -2,6 +2,12 @@
 
 从自己的“中国移动10086”微信服务号读取话费、流量和通话余量，每 30 分钟更新一次。所有网络请求都是只读的；不会充值、订购、退订或修改账号。
 
+## 在 Home Assistant 中的效果
+
+下图是设备页面，可查看话费余额及各类流量的剩余量、已用量和总量。截图中的数值仅为展示时的账号状态。
+
+![中国移动10086 集成在 Home Assistant 中的设备页面](image/ha-device-overview.png)
+
 ## 下载与安装
 
 从 [Releases](https://github.com/cumtwjq/china-mobile-10086-ha/releases/latest) 下载：
