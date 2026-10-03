@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+releases/
+local_tool/bin/
+local_tool/python/
+*.dpapi
+*.har
+*.mitm
+*.pcap
+capture*.json
+capture*.txt
+.env

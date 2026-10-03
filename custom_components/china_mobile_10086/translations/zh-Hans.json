@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "中国移动10086",
+        "description": "粘贴本地抓包工具复制的只读请求 JSON。",
+        "data": {
+          "request_json": "只读请求 JSON"
+        }
+      }
+    },
+    "error": {
+      "invalid_capture": "请求格式无效",
+      "invalid_auth": "登录已失效，请重新抓取",
+      "service_unavailable": "接口返回升级公告，请检查登录会话或稍后重试",
+      "cannot_connect": "无法读取账号数据，请检查网络或重新抓取"
+    },
+    "abort": {
+      "already_configured": "此账号已配置"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "更新中国移动登录请求",
+        "description": "粘贴重新抓取的只读请求 JSON。",
+        "data": {
+          "request_json": "新的只读请求 JSON"
+        }
+      }
+    },
+    "error": {
+      "invalid_capture": "请求格式无效",
+      "invalid_auth": "登录已失效，请重新抓取",
+      "service_unavailable": "接口返回升级公告，请检查登录会话或稍后重试",
+      "cannot_connect": "无法读取账号数据，请检查网络或重新抓取"
+    }
+  }
+}

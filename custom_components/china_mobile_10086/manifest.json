@@ -1,0 +1,9 @@
+{
+  "domain": "china_mobile_10086",
+  "name": "中国移动10086",
+  "version": "0.1.1",
+  "config_flow": true,
+  "documentation": "https://github.com/cumtwjq/china-mobile-10086-ha",
+  "iot_class": "cloud_polling",
+  "requirements": []
+}
