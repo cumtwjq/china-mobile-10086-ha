@@ -1,33 +1,25 @@
 # 中国移动10086 Home Assistant 集成
 
-此版本以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor) 的持久化 Chromium 查询方式为基础。**在 Home Assistant 集成界面输入手机号和短信验证码**；HAOS 加载项在后台操作中国移动官方网页登录页，之后复用浏览器状态查询话费、流量和通话余量。电脑不需要一直开机，也不需要手机代理抓包或粘贴请求 JSON。官网出现滑块等额外验证时，可打开加载项的远程浏览器完成。
+在 Home Assistant 中查看中国移动的话费余额、流量和通话余量。适用于 **Home Assistant OS（HAOS）**：浏览器加载项负责登录和查询，集成负责显示传感器。添加账号时，在集成界面输入手机号和短信验证码。
 
-> 单账号登录与余额查询已在 HAOS 实测；多账号版本仍需实际账号验证。登录状态失效时需重新验证。此版不会自动读取短信验证码，不能承诺长期免登录。查询只读取账号数据，不执行充值、订购或退订。
+## 下载与安装
 
-## 安装
+需要安装两个包，顺序是**先加载项，后集成**：
 
-参见 [安装和测试说明](INSTALL.md)。需要同时安装：
+1. [浏览器加载项 v0.3.1](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.1/china_mobile_10086-haos-app.zip)
+2. [HA 集成 v0.3.0](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-experimental.zip)
 
-1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-experimental.zip)。
-2. [HAOS 加载项 ZIP（v0.3.1 轻量镜像）](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.1/china_mobile_10086-haos-app.zip)。
+解压加载项 ZIP，把 `china_mobile_browser` 文件夹放到 HAOS 的 `local_apps` 共享目录，在应用商店检查更新并安装、启动。再把集成 ZIP 中的 `custom_components/china_mobile_10086` 放到 HA 配置目录的 `custom_components`，重启 HA。随后在“设置 → 设备与服务 → 添加集成”中搜索“中国移动10086”，输入手机号和收到的验证码。
 
-先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。每个手机号使用独立的浏览器配置和结果文件；旧账号仍使用原来的 `/data/browser_profile`，新账号保存在 `/data/browser_profiles/<账号标识>`。登录状态不会写进集成配置；查询值按账号保存在 HAOS `/share/china_mobile_10086/accounts/`。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
+路径示例、升级步骤和常见问题见[安装教程](INSTALL.md)。
 
-需要第二个手机号时，再次“添加集成 → 中国移动10086”，输入另一个手机号和它收到的验证码。每个账号在 HA 中有独立设备，名称包含手机号后四位。加载项为每个账号保留独立运行的 Chromium 配置，按账号轮流查询，两个账号的 Cookie 不会混用。每增加一个账号会额外占用浏览器内存。
+## 使用说明
 
-在 HA 删除某个账号的集成条目时，加载项会停止查询该账号并删除它保存的浏览器登录状态；重新添加需再次短信验证。
-
-## 查询和失效提示
-
-- 加载项每 **30 分钟**打开已登录的中国移动页面查询；登录成功后会立即首次查询。
-- 集成每 **5 分钟**读取加载项的最新结果。这只是读取 HAOS 本地文件，不会向中国移动发起请求。
-- “浏览器登录状态”为 `ok` 时，数值可用；`authenticating` 表示短信登录正在进行；`login_required` 时 HA 会提示“重新认证”，在集成界面输入新的短信验证码；`query_failed` 表示官方页面显示升级公告或未返回可识别数据；`waiting_for_app` 或 `stale` 表示加载项未运行或长时间没有更新。
-- 从旧版升级时，旧抓包请求会从集成配置中移除；登录需使用当前的短信验证流程。
-
-目前从页面提取话费余额、总/通用/定向/其他流量的余量、已用量和总量，以及通话余量、已用量和总量。已用流量为 MB，余量和总量为 GB。接口没有返回的字段会显示为不可用，不会用旧值填充。
-
-话费余额优先读取网页上明确标注的金额；网页未显示该金额时，才回退到 `fareBalance` 接口字段。这是为修正网页显示 116.63 元而接口字段返回 126.63 元的实际案例。
+- 加载项约每 **30 分钟**查询一次；集成每 **5 分钟**读取一次本地结果。
+- 需要多个账号时，再次添加“中国移动10086”集成。各账号使用独立的浏览器登录状态和 HA 设备。
+- 登录失效时，在对应账号的集成卡片中选择“重新认证”。如果官方网页要求滑块验证，打开加载项界面手动完成。
+- 会话过期后可能需要再次输入短信验证码；多个账号会增加 HAOS 内存占用，多账号长期运行仍需实际验证。
 
 ## 来源与鸣谢
 
-浏览器登录、持久化浏览器状态和查询接口以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor)（MIT License）为基础，其许可文本随加载项一同提供；配置与重新认证交互参考 [Shaobo-Pocket-Carrier](https://github.com/Shaobor/Shaobo-Pocket-Carrier)（MIT License），未使用其联通、电信接口。感谢 **Codex** 全程指导、编写代码并整理文档；感谢账号持有人提供实际数据并在 Home Assistant 中测试。
+浏览器登录与查询方式参考 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor)（MIT License，许可文本随加载项提供）；集成配置和重新认证流程参考 [Shaobo-Pocket-Carrier](https://github.com/Shaobor/Shaobo-Pocket-Carrier)。本项目代码和文档由 Codex 编写，感谢用户提供实际账号测试。
