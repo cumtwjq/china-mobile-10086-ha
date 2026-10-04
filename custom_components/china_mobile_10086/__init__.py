@@ -45,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         logger=_LOGGER,
         name=DOMAIN,
         update_method=lambda: hass.async_add_executor_job(_read_result),
-        update_interval=timedelta(minutes=1),
+        update_interval=timedelta(minutes=5),
     )
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

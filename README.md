@@ -8,7 +8,7 @@
 
 参见 [安装和测试说明](INSTALL.md)。需要同时安装：
 
-1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.4/china_mobile_10086-experimental.zip)。
+1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.5/china_mobile_10086-experimental.zip)。
 2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.4/china_mobile_10086-haos-app.zip)。
 
 先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。登录会话保存在 HAOS 加载项 `/data/browser_profile`，不会写进集成配置；查询值经 HAOS `/share/china_mobile_10086/account.json` 共享给集成。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
@@ -16,7 +16,7 @@
 ## 查询和失效提示
 
 - 加载项每 **30 分钟**打开已登录的中国移动页面查询；登录成功后会立即首次查询。
-- 集成每 **1 分钟**读取加载项的最新结果。
+- 集成每 **5 分钟**读取加载项的最新结果。这只是读取 HAOS 本地文件，不会向中国移动发起请求。
 - “浏览器登录状态”为 `ok` 时，数值可用；`authenticating` 表示短信登录正在进行；`login_required` 时 HA 会提示“重新认证”，在集成界面输入新的短信验证码；`query_failed` 表示官方页面显示升级公告或未返回可识别数据；`waiting_for_app` 或 `stale` 表示加载项未运行或长时间没有更新。
 - 从旧版升级时，旧抓包请求会从集成配置中移除；登录需使用当前的短信验证流程。
 
