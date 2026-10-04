@@ -8,10 +8,21 @@ import unittest
 from Crypto.Cipher import AES
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "china_mobile_browser"))
-from mobile_parser import IV, KEY, decode_response, extract_sensors  # noqa: E402
+from mobile_parser import (  # noqa: E402
+    IV, KEY, balance_for_display, balance_from_page_text, decode_response,
+    extract_sensors,
+)
 
 
 class BrowserParserTests(unittest.TestCase):
+    def test_visible_balance_label(self):
+        self.assertEqual(balance_from_page_text("话费余额\n116.63 元"), 116.63)
+        self.assertEqual(balance_from_page_text("话费余额（元）\n116.63"), 116.63)
+        self.assertEqual(balance_from_page_text("116.63元 话费余额"), 116.63)
+        self.assertIsNone(balance_from_page_text("实时费用 126.63 元"))
+        self.assertEqual(balance_for_display(126.63, "话费余额 116.63 元"), 116.63)
+        self.assertEqual(balance_for_display(126.63, "实时费用 116.63 元"), 126.63)
+
     def test_encrypted_account_response(self):
         payload = {"data": {"realFeeQryRsp": {"curFeeTotal": "116.63"}}}
         raw = json.dumps(payload).encode()

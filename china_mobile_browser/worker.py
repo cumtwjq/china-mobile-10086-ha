@@ -14,7 +14,7 @@ from typing import Any
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
-from mobile_parser import decode_response, extract_sensors
+from mobile_parser import balance_for_display, decode_response, extract_sensors
 
 
 LOGIN_URL = "https://wx.10086.cn/website/bind/bindAccount/new"
@@ -172,6 +172,18 @@ async def query(page: Any) -> dict[str, float] | None:
         if await upgrade_notice(page):
             return {}
         sensors = extract_sensors(responses)
+        try:
+            api_balance = sensors.get("balance")
+            displayed_balance = balance_for_display(
+                api_balance,
+                await page.locator("body").inner_text(timeout=3000),
+            )
+            if displayed_balance is not None:
+                if api_balance is not None and api_balance != displayed_balance:
+                    LOG.info("Visible balance differs from API amount; using visible balance")
+                sensors["balance"] = displayed_balance
+        except PlaywrightError:
+            pass
         return sensors if sensors else {}
     finally:
         page.remove_listener("response", on_response)

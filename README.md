@@ -8,8 +8,8 @@
 
 参见 [安装和测试说明](INSTALL.md)。需要同时安装：
 
-1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.3/china_mobile_10086-experimental.zip)。
-2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.3/china_mobile_10086-haos-app.zip)。
+1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.4/china_mobile_10086-experimental.zip)。
+2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.4/china_mobile_10086-haos-app.zip)。
 
 先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。登录会话保存在 HAOS 加载项 `/data/browser_profile`，不会写进集成配置；查询值经 HAOS `/share/china_mobile_10086/account.json` 共享给集成。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
 
@@ -21,6 +21,8 @@
 - 从旧版升级时，旧抓包请求会从集成配置中移除；登录需使用当前的短信验证流程。
 
 目前从页面提取话费余额、总/通用/定向/其他流量的余量、已用量和总量，以及通话余量、已用量和总量。已用流量为 MB，余量和总量为 GB。接口没有返回的字段会显示为不可用，不会用旧值填充。
+
+话费余额优先读取网页上明确标注的金额；网页未显示该金额时，才回退到 `fareBalance` 接口字段。这是为修正网页显示 116.63 元而接口字段返回 126.63 元的实际案例。
 
 ## 来源与鸣谢
 

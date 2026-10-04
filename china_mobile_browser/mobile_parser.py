@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -38,6 +39,24 @@ def number(value: Any) -> float | None:
     except (InvalidOperation, ValueError):
         return None
     return float(result) if result.is_finite() else None
+
+
+def balance_from_page_text(page_text: str) -> float | None:
+    """Read the amount next to the visible 话费余额 label, if present."""
+    for pattern in (
+        r"话费余额(?:\s*[（(]元[）)])?\s*(\d+\.\d{2})(?:\s*元)?",
+        r"(\d+\.\d{2})(?:\s*元)?\s*话费余额",
+    ):
+        match = re.search(pattern, page_text)
+        if match:
+            return number(match.group(1))
+    return None
+
+
+def balance_for_display(api_balance: float | None, page_text: str) -> float | None:
+    """Prefer the account holder's visible balance to a different API amount."""
+    visible_balance = balance_from_page_text(page_text)
+    return visible_balance if visible_balance is not None else api_balance
 
 
 def flow_mb(item: dict[str, Any], field: str) -> float | None:
