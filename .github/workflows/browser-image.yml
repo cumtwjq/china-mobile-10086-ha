@@ -1,0 +1,26 @@
+name: Browser image smoke test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build add-on image
+        run: docker build -t china-mobile-browser:test china_mobile_browser
+      - name: Start add-on and check noVNC
+        run: |
+          docker run -d --name browser-smoke china-mobile-browser:test
+          sleep 10
+          docker exec browser-smoke python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:6080/', timeout=5).status == 200"
+      - name: Check headed Chromium
+        run: docker exec -i browser-smoke python - < tests/smoke_browser.py
+      - name: Report image size
+        run: |
+          docker image inspect china-mobile-browser:test --format '{{.Size}}' \
+            | awk '{printf "Image size: %.2f GiB (%s bytes)\n", $1/1024/1024/1024, $1}'
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs browser-smoke || true
