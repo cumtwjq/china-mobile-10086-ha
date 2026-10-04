@@ -10,7 +10,7 @@
 
 先在 HAOS 安装并启动官方 **Samba share** 应用，设置用户名和密码，确认启用 `local_apps` 共享。在 Windows 文件资源管理器地址栏输入 `\\HA的IP地址\local_apps`，用 Samba 账号登录。解压 `china_mobile_10086-haos-app.zip`，把其中的 `china_mobile_browser` 文件夹复制到该共享根目录。最终从 Windows 看到的文件应是 `\\HA的IP地址\local_apps\china_mobile_browser\config.yaml`，不要再添加 `local` 这一层，也不要套入第二个 `china_mobile_browser` 文件夹。旧版 Samba share 也可使用 `\\HA的IP地址\addons` 共享名。
 
-复制完成后，在“设置 → 应用（旧界面为加载项）→ 应用商店”右上角选择“检查更新”，找到“中国移动10086浏览器”并安装、启动。当前 0.3.0 版沿用已验证可启动的 Playwright 基础镜像，从 0.2.x 升级时通常可复用本机已下载的镜像层；全新安装仍需下载约 1 GB。
+复制完成后，在“设置 → 应用（旧界面为加载项）→ 应用商店”右上角选择“检查更新”，找到“中国移动10086浏览器”并安装、启动。0.3.1 版改为只安装 Chromium 的轻量镜像，GitHub 构建测试显示镜像约 1.18 GiB；实际下载量和 HAOS 显示的占用可能不同。已有登录状态保存在加载项 `/data`，更新镜像不需重新登录。
 
 当前本地包支持 HAOS 的 `amd64` 和 `aarch64`。如在加载项商店找不到，先确认目录结构与 HAOS 架构。
 

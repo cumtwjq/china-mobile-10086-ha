@@ -9,7 +9,7 @@
 参见 [安装和测试说明](INSTALL.md)。需要同时安装：
 
 1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-experimental.zip)。
-2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-haos-app.zip)。
+2. [HAOS 加载项 ZIP（v0.3.1 轻量镜像）](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.1/china_mobile_10086-haos-app.zip)。
 
 先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。每个手机号使用独立的浏览器配置和结果文件；旧账号仍使用原来的 `/data/browser_profile`，新账号保存在 `/data/browser_profiles/<账号标识>`。登录状态不会写进集成配置；查询值按账号保存在 HAOS `/share/china_mobile_10086/accounts/`。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
 
