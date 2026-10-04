@@ -57,7 +57,7 @@ class BrowserWorkerTests(unittest.TestCase):
                 return False
 
         async def fake_query(page):
-            return {"balance": 116.63}
+            return {"balance": 12.34}
 
         cycles = 0
 
@@ -84,8 +84,8 @@ class BrowserWorkerTests(unittest.TestCase):
                 with self.assertRaises(StopLoop):
                     asyncio.run(worker.run())
             self.assertEqual(len(chromium.contexts), 2)
-            self.assertIn((accounts[0], "ok", {"balance": 116.63}), [call.args for call in statuses.call_args_list])
-            self.assertIn((accounts[1], "ok", {"balance": 116.63}), [call.args for call in statuses.call_args_list])
+            self.assertIn((accounts[0], "ok", {"balance": 12.34}), [call.args for call in statuses.call_args_list])
+            self.assertIn((accounts[1], "ok", {"balance": 12.34}), [call.args for call in statuses.call_args_list])
 
     def test_two_accounts_keep_separate_open_profiles(self):
         async def exercise(root):
