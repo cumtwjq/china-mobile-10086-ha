@@ -50,7 +50,10 @@ class BaseSensor(CoordinatorEntity[DataUpdateCoordinator], SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="中国移动",
-            name="中国移动10086",
+            name=(
+                f"中国移动10086 · 尾号{entry.data['phone'][-4:]}"
+                if entry.data.get("phone") else "中国移动10086"
+            ),
         )
 
 

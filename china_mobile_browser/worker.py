@@ -6,24 +6,23 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
-import os
-from pathlib import Path
+import re
 import time
 from typing import Any
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
+from account_store import (
+    COMMANDS, HEARTBEAT, LEGACY_COMMAND, LEGACY_RESPONSE, LEGACY_RESULT,
+    RESPONSES, forget_account, load_accounts, profile_path, register_account, result_path,
+    valid_account_id, write_json,
+)
 from mobile_parser import balance_for_display, decode_response, extract_sensors
 
 
 LOGIN_URL = "https://wx.10086.cn/website/bind/bindAccount/new"
 HOME_URL = "https://wx.10086.cn/website/spa/main/newHome"
-PROFILE = Path("/data/browser_profile")
-OUTPUT = Path("/share/china_mobile_10086/account.json")
-COMMAND = Path("/share/china_mobile_10086/auth_command.json")
-RESPONSE = Path("/share/china_mobile_10086/auth_response.json")
-HEARTBEAT = Path("/share/china_mobile_10086/heartbeat")
 INTERVAL_SECONDS = 30 * 60
 API_NAMES = (
     "getNewMarginInfo",
@@ -33,36 +32,31 @@ API_NAMES = (
 LOG = logging.getLogger("china_mobile_browser")
 
 
-def write_status(status: str, sensors: dict[str, float] | None = None) -> None:
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+def write_status(
+    account_id: str, status: str, sensors: dict[str, float] | None = None
+) -> None:
     payload: dict[str, Any] = {
         "version": 2,
         "status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "sensors": sensors or {},
     }
-    temporary = OUTPUT.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(OUTPUT)
+    write_json(result_path(account_id), payload)
+    if account_id == "legacy":
+        # Keep the 0.2.x integration working while its files are being upgraded.
+        write_json(LEGACY_RESULT, payload)
 
 
-def write_auth_response(request_id: str, status: str) -> None:
-    temporary = RESPONSE.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"id": request_id, "status": status}), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(RESPONSE)
+def write_auth_response(request_id: str, status: str, legacy: bool) -> None:
+    if not isinstance(request_id, str) or re.fullmatch(r"[0-9a-f]{32}", request_id) is None:
+        return
+    target = LEGACY_RESPONSE if legacy else RESPONSES / f"{request_id}.json"
+    write_json(target, {"id": request_id, "status": status})
 
 
-async def handle_auth_command(page: Any) -> str | None:
-    if not COMMAND.exists():
-        return None
-    try:
-        command = json.loads(COMMAND.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        COMMAND.unlink(missing_ok=True)
-        return None
-    COMMAND.unlink(missing_ok=True)
+async def handle_auth_command(
+    page: Any, account_id: str, command: dict[str, Any], legacy: bool
+) -> str:
     request_id = command.get("id", "")
     status = "login_failed"
     try:
@@ -105,15 +99,15 @@ async def handle_auth_command(page: Any) -> str | None:
                         text = await page.locator("body").inner_text(timeout=3000)
                         if any(word in text for word in ("话费余额", "余额", "套餐", "余量")):
                             status = "success"
-                            write_status("authenticating")
+                            write_status(account_id, "authenticating")
                             break
     except PlaywrightError:
         status = "login_failed"
     finally:
         # Never log or retain the phone number or SMS code.
         command.clear()
-        if request_id:
-            write_auth_response(request_id, status)
+        if request_id and status != "success":
+            write_auth_response(request_id, status, legacy)
     return status
 
 
@@ -189,11 +183,43 @@ async def query(page: Any) -> dict[str, float] | None:
         page.remove_listener("response", on_response)
 
 
-async def run() -> None:
-    write_status("starting")
-    async with async_playwright() as playwright:
-        context = await playwright.chromium.launch_persistent_context(
-            str(PROFILE),
+def next_command() -> tuple[dict[str, Any], bool] | None:
+    """Consume one command without retaining an SMS code in the shared folder."""
+    candidates = [LEGACY_COMMAND] if LEGACY_COMMAND.exists() else []
+    candidates.extend(sorted(COMMANDS.glob("*.json")))
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            path.unlink(missing_ok=True)
+            continue
+        path.unlink(missing_ok=True)
+        if isinstance(payload, dict):
+            return payload, path == LEGACY_COMMAND
+    return None
+
+
+class BrowserManager:
+    """Keep one persistent Chromium context open for each account."""
+
+    def __init__(self, playwright: Any) -> None:
+        self.playwright = playwright
+        self.contexts: dict[str, Any] = {}
+        self.pages: dict[str, Any] = {}
+
+    async def activate(self, account_id: str) -> Any:
+        if account_id in self.pages:
+            page = self.pages[account_id]
+            try:
+                await page.bring_to_front()
+            except PlaywrightError:
+                LOG.warning("Could not switch visible browser window for account %s", account_id)
+            return page
+        profile = profile_path(account_id)
+        profile.mkdir(parents=True, exist_ok=True)
+        profile.chmod(0o700)
+        context = await self.playwright.chromium.launch_persistent_context(
+            str(profile),
             headless=False,
             viewport={"width": 1280, "height": 850},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -202,49 +228,122 @@ async def run() -> None:
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
         page = context.pages[0] if context.pages else await context.new_page()
-        last_query = 0.0
+        self.contexts[account_id] = context
+        self.pages[account_id] = page
+        try:
+            await page.bring_to_front()
+        except PlaywrightError:
+            LOG.warning("Could not show browser window for account %s", account_id)
+        return page
+
+    async def close(self) -> None:
+        for context in self.contexts.values():
+            await context.close()
+        self.contexts.clear()
+        self.pages.clear()
+
+    async def close_account(self, account_id: str) -> None:
+        context = self.contexts.pop(account_id, None)
+        self.pages.pop(account_id, None)
+        if context is not None:
+            await context.close()
+
+
+async def run() -> None:
+    accounts = load_accounts()
+    last_query: dict[str, float] = {account_id: 0.0 for account_id in accounts}
+    for account_id in accounts:
+        write_status(account_id, "starting")
+
+    async with async_playwright() as playwright:
+        browser = BrowserManager(playwright)
+        auth_account: str | None = None
         auth_deadline = 0.0
         try:
             while True:
-                try:
-                    HEARTBEAT.touch()
-                    auth_result = await handle_auth_command(page)
-                    if auth_result in {"sent", "manual_required"}:
-                        auth_deadline = time.monotonic() + 5 * 60
-                        write_status("authenticating")
-                    elif auth_result == "success":
-                        auth_deadline = 0.0
-                        last_query = 0.0
-                    # Never navigate away while the user is entering an SMS code.
-                    if await login_page(page):
-                        if time.monotonic() >= auth_deadline:
-                            write_status("login_required")
-                        last_query = 0.0
+                HEARTBEAT.touch()
+                incoming = next_command()
+                if incoming is not None:
+                    command, legacy = incoming
+                    account_id = "legacy" if legacy else command.get("account_id")
+                    request_id = command.get("id", "")
+                    if not valid_account_id(account_id):
+                        write_auth_response(request_id, "invalid_account", legacy)
+                    elif command.get("action") == "forget":
+                        try:
+                            await browser.close_account(account_id)
+                            forget_account(account_id)
+                            accounts = [item for item in accounts if item != account_id]
+                            last_query.pop(account_id, None)
+                            if auth_account == account_id:
+                                auth_account = None
+                        except OSError:
+                            LOG.warning("Could not remove browser data for account %s", account_id)
+                    elif (
+                        auth_account is not None
+                        and auth_account != account_id
+                        and time.monotonic() < auth_deadline
+                    ):
+                        write_auth_response(request_id, "browser_busy", legacy)
+                    else:
+                        try:
+                            page = await browser.activate(account_id)
+                            status = await handle_auth_command(
+                                page, account_id, command, legacy
+                            )
+                            if status in {"sent", "manual_required"}:
+                                auth_account = account_id
+                                auth_deadline = time.monotonic() + 5 * 60
+                                write_status(account_id, "authenticating")
+                            elif status == "success":
+                                register_account(account_id)
+                                if account_id not in accounts:
+                                    accounts.append(account_id)
+                                last_query[account_id] = 0.0
+                                auth_account = None
+                                write_auth_response(request_id, "success", legacy)
+                        except (PlaywrightError, OSError) as err:
+                            write_auth_response(request_id, "login_failed", legacy)
+                            LOG.warning("Browser login failed: %s", type(err).__name__)
+                        finally:
+                            command.clear()
+
+                if auth_account is not None:
+                    if time.monotonic() < auth_deadline:
                         await asyncio.sleep(1)
                         continue
-                    if last_query == 0.0 or time.monotonic() - last_query >= INTERVAL_SECONDS:
+                    auth_account = None
+
+                for account_id in accounts:
+                    previous = last_query.get(account_id, 0.0)
+                    if previous and time.monotonic() - previous < INTERVAL_SECONDS:
+                        continue
+                    try:
+                        page = await browser.activate(account_id)
                         sensors = await query(page)
                         if sensors is None:
-                            auth_deadline = 0.0
-                            write_status("login_required")
-                            if not await login_page(page):
-                                await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-                            LOG.info("Official login page is ready in the app browser")
+                            write_status(account_id, "login_required")
+                            await page.goto(
+                                LOGIN_URL, wait_until="domcontentloaded", timeout=30000
+                            )
+                            LOG.info("Account %s needs browser login", account_id)
                         elif sensors:
-                            write_status("ok", sensors)
-                            LOG.info("Account values updated: %d sensors", len(sensors))
-                            last_query = time.monotonic()
+                            write_status(account_id, "ok", sensors)
+                            LOG.info("Account %s updated: %d sensors", account_id, len(sensors))
                         else:
-                            write_status("query_failed")
-                            LOG.warning("Account page returned no recognized values")
-                            last_query = time.monotonic()
-                    await asyncio.sleep(1)
-                except PlaywrightError as err:
-                    write_status("query_failed")
-                    LOG.warning("Browser query failed: %s", type(err).__name__)
-                    await asyncio.sleep(60)
+                            write_status(account_id, "query_failed")
+                            LOG.warning("Account %s returned no recognized values", account_id)
+                    except PlaywrightError as err:
+                        write_status(account_id, "query_failed")
+                        LOG.warning(
+                            "Account %s browser query failed: %s",
+                            account_id, type(err).__name__,
+                        )
+                    last_query[account_id] = time.monotonic()
+                    break
+                await asyncio.sleep(1)
         finally:
-            await context.close()
+            await browser.close()
 
 
 if __name__ == "__main__":

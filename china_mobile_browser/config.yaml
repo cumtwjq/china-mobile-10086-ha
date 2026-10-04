@@ -1,5 +1,5 @@
 name: 中国移动10086浏览器
-version: 0.2.4
+version: 0.3.0
 slug: china_mobile_browser
 description: 在 HAOS 上通过浏览器登录并查询中国移动账号
 url: https://github.com/cumtwjq/china-mobile-10086-ha

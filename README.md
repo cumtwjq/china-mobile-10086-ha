@@ -2,16 +2,20 @@
 
 此版本以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor) 的持久化 Chromium 查询方式为基础。**在 Home Assistant 集成界面输入手机号和短信验证码**；HAOS 加载项在后台操作中国移动官方网页登录页，之后复用浏览器状态查询话费、流量和通话余量。电脑不需要一直开机，也不需要手机代理抓包或粘贴请求 JSON。官网出现滑块等额外验证时，可打开加载项的远程浏览器完成。
 
-> 真实账号尚未完成端到端验证。上游浏览器方案也说明：登录状态失效时仍需重新验证。此版不会自动读取短信验证码，不能承诺长期免登录。查询只读取账号数据，不执行充值、订购或退订。
+> 单账号登录与余额查询已在 HAOS 实测；多账号版本仍需实际账号验证。登录状态失效时需重新验证。此版不会自动读取短信验证码，不能承诺长期免登录。查询只读取账号数据，不执行充值、订购或退订。
 
 ## 安装
 
 参见 [安装和测试说明](INSTALL.md)。需要同时安装：
 
-1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.5/china_mobile_10086-experimental.zip)。
-2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.2.4/china_mobile_10086-haos-app.zip)。
+1. [自定义集成 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-experimental.zip)。
+2. [HAOS 加载项 ZIP](https://github.com/cumtwjq/china-mobile-10086-ha/releases/download/v0.3.0/china_mobile_10086-haos-app.zip)。
 
-先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。登录会话保存在 HAOS 加载项 `/data/browser_profile`，不会写进集成配置；查询值经 HAOS `/share/china_mobile_10086/account.json` 共享给集成。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
+先启动加载项，再在“添加集成”里输入手机号并提交短信验证码。每个手机号使用独立的浏览器配置和结果文件；旧账号仍使用原来的 `/data/browser_profile`，新账号保存在 `/data/browser_profiles/<账号标识>`。登录状态不会写进集成配置；查询值按账号保存在 HAOS `/share/china_mobile_10086/accounts/`。加载项界面由 Home Assistant Ingress 保护，不开放额外的局域网端口。
+
+需要第二个手机号时，再次“添加集成 → 中国移动10086”，输入另一个手机号和它收到的验证码。每个账号在 HA 中有独立设备，名称包含手机号后四位。加载项为每个账号保留独立运行的 Chromium 配置，按账号轮流查询，两个账号的 Cookie 不会混用。每增加一个账号会额外占用浏览器内存。
+
+在 HA 删除某个账号的集成条目时，加载项会停止查询该账号并删除它保存的浏览器登录状态；重新添加需再次短信验证。
 
 ## 查询和失效提示
 

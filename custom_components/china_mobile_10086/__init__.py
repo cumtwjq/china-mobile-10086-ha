@@ -6,22 +6,28 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
+import re
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN, RESULT_PATH
+from .auth_bridge import async_queue_forget
+from .const import CONF_ACCOUNT_ID, DOMAIN, RESULT_DIR
 
 
 PLATFORMS = ["sensor"]
 _LOGGER = logging.getLogger(__name__)
 
 
-def _read_result() -> dict[str, Any]:
+def _read_result(account_id: str) -> dict[str, Any]:
     try:
-        payload = json.loads(Path(RESULT_PATH).read_text(encoding="utf-8"))
+        if re.fullmatch(r"legacy|[0-9a-f]{16}", account_id) is None:
+            raise ValueError("invalid account id")
+        payload = json.loads(
+            (Path(RESULT_DIR) / f"{account_id}.json").read_text(encoding="utf-8")
+        )
         if payload.get("version") != 2 or not isinstance(payload.get("sensors"), dict):
             raise ValueError("unsupported browser result")
         stamp = datetime.fromisoformat(payload["updated_at"])
@@ -33,18 +39,28 @@ def _read_result() -> dict[str, Any]:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Discard short-lived captured requests from the previous version."""
-    if entry.version == 1:
-        hass.config_entries.async_update_entry(entry, data={}, version=2)
+    """Keep the existing browser profile and entity IDs for the first account."""
+    if entry.version < 3:
+        data = dict(entry.data) if entry.version == 2 else {}
+        data[CONF_ACCOUNT_ID] = "legacy"
+        phone = data.get("phone")
+        hass.config_entries.async_update_entry(
+            entry,
+            data=data,
+            version=3,
+            unique_id=phone if phone else entry.unique_id,
+            title=f"中国移动10086 · 尾号{phone[-4:]}" if phone else entry.title,
+        )
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    account_id = entry.data.get(CONF_ACCOUNT_ID, "legacy")
     coordinator = DataUpdateCoordinator(
         hass,
         logger=_LOGGER,
         name=DOMAIN,
-        update_method=lambda: hass.async_add_executor_job(_read_result),
+        update_method=lambda: hass.async_add_executor_job(_read_result, account_id),
         update_interval=timedelta(minutes=5),
     )
     await coordinator.async_config_entry_first_refresh()
@@ -81,3 +97,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Discard this account's browser login when its integration is removed."""
+    await async_queue_forget(hass, entry.data.get(CONF_ACCOUNT_ID, "legacy"))

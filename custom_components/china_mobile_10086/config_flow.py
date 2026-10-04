@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 import voluptuous as vol
@@ -13,7 +14,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .auth_bridge import async_auth_command
-from .const import DOMAIN
+from .const import CONF_ACCOUNT_ID, DOMAIN
 
 
 CONF_PHONE = "phone"
@@ -33,6 +34,7 @@ def _code_schema() -> vol.Schema:
 
 class LoginSteps:
     _phone: str
+    _account_id: str
 
     async def _phone_step(
         self, step_id: str, user_input: dict[str, Any] | None = None, default: str | None = None
@@ -42,13 +44,27 @@ class LoginSteps:
             phone = str(user_input[CONF_PHONE]).strip()
             if len(phone) != 11 or not phone.startswith("1") or not phone.isdigit():
                 errors["base"] = "invalid_phone"
+            elif default and phone != default:
+                errors["base"] = "phone_mismatch"
             else:
-                status = await async_auth_command(self.hass, "send_code", phone)
-                if status == "sent":
+                if step_id == "user":
+                    if any(
+                        entry.data.get(CONF_PHONE) == phone
+                        for entry in self.hass.config_entries.async_entries(DOMAIN)
+                    ):
+                        return self.async_abort(reason="already_configured")
+                    await self.async_set_unique_id(phone)
+                    self._abort_if_unique_id_configured()
+                    self._account_id = secrets.token_hex(8)
+                status = await async_auth_command(
+                    self.hass, self._account_id, "send_code", phone
+                )
+                if status in {"sent", "manual_required"}:
                     self._phone = phone
                     return await self.async_step_code()
                 errors["base"] = status if status in {
-                    "app_not_running", "app_timeout", "manual_required", "send_failed", "login_failed"
+                    "app_not_running", "app_timeout", "manual_required", "send_failed",
+                    "login_failed", "browser_busy", "invalid_account",
                 } else "login_failed"
         return self.async_show_form(
             step_id=step_id, data_schema=_phone_schema(default), errors=errors
@@ -61,17 +77,20 @@ class LoginSteps:
             if not code.isdigit() or not 4 <= len(code) <= 8:
                 errors["base"] = "invalid_code"
             else:
-                status = await async_auth_command(self.hass, "verify", code)
+                status = await async_auth_command(
+                    self.hass, self._account_id, "verify", code
+                )
                 if status == "success":
                     return await self._finish_login()
                 errors["base"] = status if status in {
-                    "app_not_running", "app_timeout", "invalid_code", "login_failed"
+                    "app_not_running", "app_timeout", "invalid_code", "login_failed",
+                    "browser_busy", "invalid_account",
                 } else "login_failed"
         return self.async_show_form(step_id="code", data_schema=_code_schema(), errors=errors)
 
 
 class ChinaMobileConfigFlow(LoginSteps, config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 2
+    VERSION = 3
 
     _reauth_entry: ConfigEntry | None = None
 
@@ -86,6 +105,7 @@ class ChinaMobileConfigFlow(LoginSteps, config_entries.ConfigFlow, domain=DOMAIN
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Restore the existing entry through the same phone/SMS flow."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        self._account_id = self._reauth_entry.data.get(CONF_ACCOUNT_ID, "legacy")
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -98,15 +118,17 @@ class ChinaMobileConfigFlow(LoginSteps, config_entries.ConfigFlow, domain=DOMAIN
         if self._reauth_entry is not None:
             return self.async_update_reload_and_abort(
                 self._reauth_entry,
-                data_updates={CONF_PHONE: self._phone},
+                data_updates={CONF_PHONE: self._phone, CONF_ACCOUNT_ID: self._account_id},
             )
-        await self.async_set_unique_id(DOMAIN)
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(title="中国移动10086", data={CONF_PHONE: self._phone})
+        return self.async_create_entry(
+            title=f"中国移动10086 · 尾号{self._phone[-4:]}",
+            data={CONF_PHONE: self._phone, CONF_ACCOUNT_ID: self._account_id},
+        )
 
 
 class ChinaMobileOptionsFlow(LoginSteps, OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        self._account_id = self.config_entry.data.get(CONF_ACCOUNT_ID, "legacy")
         return await self._phone_step("init", user_input, self.config_entry.data.get(CONF_PHONE))
 
     async def _finish_login(self) -> FlowResult:

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p /data/browser_profile /share/china_mobile_10086
-chmod 700 /data/browser_profile
+mkdir -p /data/browser_profiles /share/china_mobile_10086/accounts \
+  /share/china_mobile_10086/commands /share/china_mobile_10086/responses
+chmod 700 /data/browser_profiles
 
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
 sleep 1

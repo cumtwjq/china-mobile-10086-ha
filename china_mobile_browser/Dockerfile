@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
 
-ARG BUILD_VERSION=0.2.4
+ARG BUILD_VERSION=0.3.0
 ARG BUILD_ARCH
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \
@@ -16,6 +16,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pip install --no-cache-dir playwright==1.63.0 pycryptodome==3.23.0
 
 COPY index.html /usr/share/novnc/index.html
-COPY run.sh worker.py mobile_parser.py /app/
+COPY run.sh worker.py mobile_parser.py account_store.py /app/
 RUN chmod +x /app/run.sh
 CMD ["/app/run.sh"]

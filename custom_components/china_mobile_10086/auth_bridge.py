@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import time
 
@@ -13,22 +14,27 @@ from homeassistant.core import HomeAssistant
 
 
 SHARE = Path("/share/china_mobile_10086")
-COMMAND = SHARE / "auth_command.json"
-RESPONSE = SHARE / "auth_response.json"
+COMMANDS = SHARE / "commands"
+RESPONSES = SHARE / "responses"
 HEARTBEAT = SHARE / "heartbeat"
 
 
-def _submit(action: str, value: str) -> str | None:
-    temporary = COMMAND.with_suffix(".tmp")
+def _submit(account_id: str, action: str, value: str) -> str | None:
+    if re.fullmatch(r"legacy|[0-9a-f]{16}", account_id) is None:
+        return None
+    request_id = secrets.token_hex(16)
+    command_path = COMMANDS / f"{request_id}.json"
+    temporary = command_path.with_suffix(".tmp")
     try:
-        if time.time() - HEARTBEAT.stat().st_mtime > 15:
+        if action != "forget" and time.time() - HEARTBEAT.stat().st_mtime > 15:
             return None
-        request_id = secrets.token_hex(16)
-        payload = {"id": request_id, "action": action}
-        payload["phone" if action == "send_code" else "code"] = value
+        COMMANDS.mkdir(parents=True, exist_ok=True)
+        payload = {"id": request_id, "account_id": account_id, "action": action}
+        if action in {"send_code", "verify"}:
+            payload["phone" if action == "send_code" else "code"] = value
         temporary.write_text(json.dumps(payload), encoding="utf-8")
         os.chmod(temporary, 0o600)
-        temporary.replace(COMMAND)
+        temporary.replace(command_path)
         return request_id
     except OSError:
         temporary.unlink(missing_ok=True)
@@ -37,17 +43,20 @@ def _submit(action: str, value: str) -> str | None:
 
 def _read_response(request_id: str) -> str | None:
     try:
-        response = json.loads(RESPONSE.read_text(encoding="utf-8"))
+        response_path = RESPONSES / f"{request_id}.json"
+        response = json.loads(response_path.read_text(encoding="utf-8"))
         if response.get("id") == request_id:
-            RESPONSE.unlink(missing_ok=True)
+            response_path.unlink(missing_ok=True)
             return response.get("status")
     except (OSError, ValueError):
         pass
     return None
 
 
-async def async_auth_command(hass: HomeAssistant, action: str, value: str) -> str:
-    request_id = await hass.async_add_executor_job(_submit, action, value)
+async def async_auth_command(
+    hass: HomeAssistant, account_id: str, action: str, value: str
+) -> str:
+    request_id = await hass.async_add_executor_job(_submit, account_id, action, value)
     if request_id is None:
         return "app_not_running"
     for _ in range(90):
@@ -56,3 +65,8 @@ async def async_auth_command(hass: HomeAssistant, action: str, value: str) -> st
             return status
         await asyncio.sleep(0.5)
     return "app_timeout"
+
+
+async def async_queue_forget(hass: HomeAssistant, account_id: str) -> None:
+    """Queue account removal even when the app is temporarily stopped."""
+    await hass.async_add_executor_job(_submit, account_id, "forget", "")
