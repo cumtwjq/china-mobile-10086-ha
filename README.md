@@ -1,4 +1,4 @@
-# 中国移动10086 Home Assistant 集成（HAOS 浏览器实验版）
+# 中国移动10086 Home Assistant 集成
 
 此版本以 [ChinaMobileMonitor](https://github.com/shiranzby/ChinaMobileMonitor) 的持久化 Chromium 查询方式为基础。**在 Home Assistant 集成界面输入手机号和短信验证码**；HAOS 加载项在后台操作中国移动官方网页登录页，之后复用浏览器状态查询话费、流量和通话余量。电脑不需要一直开机，也不需要手机代理抓包或粘贴请求 JSON。官网出现滑块等额外验证时，可打开加载项的远程浏览器完成。
 
