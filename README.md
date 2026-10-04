@@ -13,6 +13,22 @@
 
 路径示例、升级步骤和常见问题见[安装教程](INSTALL.md)。
 
+## 界面预览
+
+以下展示图由实际截图处理，已去除姓名和手机号尾号；余额、余量保留截图时的数值，不代表实时数据。
+
+**加载项：**在 HAOS 中运行浏览器，并可打开网页界面完成额外验证。
+
+<img src="image/addon-overview-public.png" alt="中国移动10086浏览器加载项运行界面" width="850">
+
+**中国移动网页：**登录后可查看话费、流量和通话余量。
+
+<img src="image/mobile-page-public.png" alt="中国移动网页显示话费和套餐余量" width="850">
+
+**HA 设备：**查询结果显示为独立传感器。
+
+<img src="image/ha-sensors-public.png" alt="Home Assistant 中国移动设备传感器" width="850">
+
 ## 使用说明
 
 - 加载项约每 **30 分钟**查询一次；集成每 **5 分钟**读取一次本地结果。

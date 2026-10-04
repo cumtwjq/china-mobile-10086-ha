@@ -10,3 +10,5 @@ releases/
 capture*.json
 capture*.txt
 .env
+/image/*
+!/image/*-public.png
