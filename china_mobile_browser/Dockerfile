@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-ARG BUILD_VERSION=0.3.1
+ARG BUILD_VERSION=0.3.2
 ARG BUILD_ARCH
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \

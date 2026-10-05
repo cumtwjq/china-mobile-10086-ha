@@ -24,6 +24,8 @@ from mobile_parser import balance_for_display, decode_response, extract_sensors
 LOGIN_URL = "https://wx.10086.cn/website/bind/bindAccount/new"
 HOME_URL = "https://wx.10086.cn/website/spa/main/newHome"
 INTERVAL_SECONDS = 30 * 60
+RETRY_SECONDS = 5 * 60
+QUERY_ATTEMPTS = 3
 API_NAMES = (
     "getNewMarginInfo",
     "fareBalance",
@@ -45,6 +47,18 @@ def write_status(
     if account_id == "legacy":
         # Keep the 0.2.x integration working while its files are being upgraded.
         write_json(LEGACY_RESULT, payload)
+
+
+def previous_sensor_keys(account_id: str) -> set[str]:
+    """Use the last complete result to spot a partially loaded page after restart."""
+    try:
+        payload = json.loads(result_path(account_id).read_text(encoding="utf-8"))
+        sensors = payload.get("sensors")
+        if payload.get("status") == "ok" and isinstance(sensors, dict):
+            return {key for key in sensors if isinstance(key, str)}
+    except (AttributeError, OSError, ValueError, TypeError):
+        pass
+    return set()
 
 
 def write_auth_response(request_id: str, status: str, legacy: bool) -> None:
@@ -133,54 +147,90 @@ async def upgrade_notice(page: Any) -> bool:
     return "系统优化升级" in text or "升级公告" in text
 
 
-async def query(page: Any) -> dict[str, float] | None:
+async def query(page: Any, expected_keys: set[str] | None = None) -> dict[str, float] | None:
     """Navigate the logged-in browser, letting its own page issue account APIs."""
     responses: dict[str, dict[str, Any]] = {}
     pending: set[asyncio.Task] = set()
+    expected_keys = expected_keys or set()
+    generation = 0
 
-    async def capture(response: Any) -> None:
+    async def capture(response: Any, response_generation: int) -> None:
         name = next((name for name in API_NAMES if name in response.url), None)
         if name is None or response.status != 200:
             return
         try:
             body = await response.text()
             parsed = decode_response(body)
-            if parsed is not None:
+            if parsed is not None and response_generation == generation:
                 responses[name] = parsed
         except PlaywrightError:
             pass
 
     def on_response(response: Any) -> None:
-        task = asyncio.create_task(capture(response))
+        task = asyncio.create_task(capture(response, generation))
         pending.add(task)
         task.add_done_callback(pending.discard)
 
     page.on("response", on_response)
     try:
-        await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(8000)
-        if pending:
-            await asyncio.wait(pending, timeout=10)
-        if await login_page(page):
-            return None
-        if await upgrade_notice(page):
-            return {}
-        sensors = extract_sensors(responses)
-        try:
-            api_balance = sensors.get("balance")
-            displayed_balance = balance_for_display(
-                api_balance,
-                await page.locator("body").inner_text(timeout=3000),
+        for attempt in range(QUERY_ATTEMPTS):
+            generation += 1
+            responses.clear()
+            if attempt == 0:
+                await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+            else:
+                await page.reload(wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(8000)
+            if pending:
+                await asyncio.wait(set(pending), timeout=10)
+            if await login_page(page):
+                return None
+            if await upgrade_notice(page):
+                return {}
+
+            async def read_snapshot() -> tuple[dict[str, float], str]:
+                sensors = extract_sensors(responses)
+                try:
+                    page_text = await page.locator("body").inner_text(timeout=3000)
+                except PlaywrightError:
+                    page_text = ""
+                api_balance = sensors.get("balance")
+                displayed_balance = balance_for_display(api_balance, page_text)
+                if displayed_balance is not None:
+                    if api_balance is not None and api_balance != displayed_balance:
+                        LOG.info("Visible balance differs from API amount; using visible balance")
+                    sensors["balance"] = displayed_balance
+                return sensors, page_text
+
+            sensors, page_text = await read_snapshot()
+            if "点击刷新" in page_text:
+                refresh = page.get_by_text("点击刷新")
+                try:
+                    if await refresh.count():
+                        await refresh.first.click(timeout=3000)
+                        await page.wait_for_timeout(5000)
+                        if pending:
+                            await asyncio.wait(set(pending), timeout=10)
+                        sensors, page_text = await read_snapshot()
+                except PlaywrightError:
+                    LOG.info("Page refresh control could not be clicked")
+
+            missing = expected_keys - sensors.keys()
+            if sensors and "点击刷新" not in page_text and not missing:
+                return sensors
+            LOG.warning(
+                "Account page incomplete on attempt %d/%d: refresh=%s missing=%s",
+                attempt + 1, QUERY_ATTEMPTS, "点击刷新" in page_text,
+                sorted(missing),
             )
-            if displayed_balance is not None:
-                if api_balance is not None and api_balance != displayed_balance:
-                    LOG.info("Visible balance differs from API amount; using visible balance")
-                sensors["balance"] = displayed_balance
-        except PlaywrightError:
-            pass
-        return sensors if sensors else {}
+        return {}
     finally:
         page.remove_listener("response", on_response)
+        remaining = tuple(pending)
+        for task in remaining:
+            task.cancel()
+        if remaining:
+            await asyncio.gather(*remaining, return_exceptions=True)
 
 
 def next_command() -> tuple[dict[str, Any], bool] | None:
@@ -251,7 +301,10 @@ class BrowserManager:
 
 async def run() -> None:
     accounts = load_accounts()
-    last_query: dict[str, float] = {account_id: 0.0 for account_id in accounts}
+    next_query: dict[str, float] = {account_id: 0.0 for account_id in accounts}
+    known_keys: dict[str, set[str]] = {
+        account_id: previous_sensor_keys(account_id) for account_id in accounts
+    }
     for account_id in accounts:
         write_status(account_id, "starting")
 
@@ -274,7 +327,8 @@ async def run() -> None:
                             await browser.close_account(account_id)
                             forget_account(account_id)
                             accounts = [item for item in accounts if item != account_id]
-                            last_query.pop(account_id, None)
+                            next_query.pop(account_id, None)
+                            known_keys.pop(account_id, None)
                             if auth_account == account_id:
                                 auth_account = None
                         except OSError:
@@ -299,7 +353,7 @@ async def run() -> None:
                                 register_account(account_id)
                                 if account_id not in accounts:
                                     accounts.append(account_id)
-                                last_query[account_id] = 0.0
+                                next_query[account_id] = 0.0
                                 auth_account = None
                                 write_auth_response(request_id, "success", legacy)
                         except (PlaywrightError, OSError) as err:
@@ -315,12 +369,12 @@ async def run() -> None:
                     auth_account = None
 
                 for account_id in accounts:
-                    previous = last_query.get(account_id, 0.0)
-                    if previous and time.monotonic() - previous < INTERVAL_SECONDS:
+                    if time.monotonic() < next_query.get(account_id, 0.0):
                         continue
+                    interval = INTERVAL_SECONDS
                     try:
                         page = await browser.activate(account_id)
-                        sensors = await query(page)
+                        sensors = await query(page, known_keys.get(account_id))
                         if sensors is None:
                             write_status(account_id, "login_required")
                             await page.goto(
@@ -328,18 +382,21 @@ async def run() -> None:
                             )
                             LOG.info("Account %s needs browser login", account_id)
                         elif sensors:
+                            known_keys[account_id] = set(sensors)
                             write_status(account_id, "ok", sensors)
                             LOG.info("Account %s updated: %d sensors", account_id, len(sensors))
                         else:
+                            interval = RETRY_SECONDS
                             write_status(account_id, "query_failed")
                             LOG.warning("Account %s returned no recognized values", account_id)
                     except PlaywrightError as err:
+                        interval = RETRY_SECONDS
                         write_status(account_id, "query_failed")
                         LOG.warning(
                             "Account %s browser query failed: %s",
                             account_id, type(err).__name__,
                         )
-                    last_query[account_id] = time.monotonic()
+                    next_query[account_id] = time.monotonic() + interval
                     break
                 await asyncio.sleep(1)
         finally:

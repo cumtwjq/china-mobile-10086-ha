@@ -41,7 +41,99 @@ class FakeChromium:
         return context
 
 
+class FakeQueryResponse:
+    status = 200
+
+    def __init__(self, name, payload):
+        self.url = f"https://wx.10086.cn/{name}"
+        self.payload = payload
+
+    async def text(self):
+        return json.dumps(self.payload)
+
+
+class FakeQueryPage:
+    url = worker.HOME_URL
+
+    def __init__(self, refresh_works):
+        self.refresh_works = refresh_works
+        self.body = "话费余额 12.34 元 点击刷新" if refresh_works else "话费余额 12.34 元"
+        self.listeners = []
+        self.reload_count = 0
+        self.refresh_count = 0
+
+    def on(self, event, listener):
+        self.listeners.append(listener)
+
+    def remove_listener(self, event, listener):
+        self.listeners.remove(listener)
+
+    def emit(self, name, payload):
+        for listener in self.listeners:
+            listener(FakeQueryResponse(name, payload))
+
+    async def goto(self, *args, **kwargs):
+        self.emit("fareBalance", {"data": {"curFeeTotal": "12.34"}})
+
+    async def reload(self, **kwargs):
+        self.reload_count += 1
+        await self.goto()
+
+    async def wait_for_timeout(self, milliseconds):
+        await asyncio.sleep(0)
+
+    def locator(self, selector):
+        self.assert_selector(selector)
+        return self
+
+    def assert_selector(self, selector):
+        assert selector == "body"
+
+    async def inner_text(self, **kwargs):
+        return self.body
+
+    def get_by_text(self, text, exact=False):
+        assert text == "点击刷新"
+        return self
+
+    async def count(self):
+        return int("点击刷新" in self.body)
+
+    @property
+    def first(self):
+        return self
+
+    async def click(self, **kwargs):
+        self.refresh_count += 1
+        self.body = "话费余额 12.34 元"
+        self.emit("getNewMarginInfo", {
+            "data": {"resultData": {"planRemianFlowInfo": {
+                "planRemian": {"remainNum": "2", "unit": "04"}
+            }}}
+        })
+
+
 class BrowserWorkerTests(unittest.TestCase):
+    def test_click_refresh_recovers_missing_allowance(self):
+        async def exercise():
+            page = FakeQueryPage(refresh_works=True)
+            result = await worker.query(page, {"balance", "general_remaining"})
+            self.assertEqual(result["general_remaining"], 2.0)
+            self.assertEqual(result["balance"], 12.34)
+            self.assertEqual(page.refresh_count, 1)
+            self.assertEqual(page.reload_count, 0)
+
+        asyncio.run(exercise())
+
+    def test_incomplete_page_is_not_reported_as_success(self):
+        async def exercise():
+            page = FakeQueryPage(refresh_works=False)
+            result = await worker.query(page, {"balance", "general_remaining"})
+            self.assertEqual(result, {})
+            self.assertEqual(page.reload_count, worker.QUERY_ATTEMPTS - 1)
+
+        asyncio.run(exercise())
+
     def test_registered_accounts_are_queried_independently(self):
         class StopLoop(Exception):
             pass
@@ -56,7 +148,7 @@ class BrowserWorkerTests(unittest.TestCase):
             async def __aexit__(self, *args):
                 return False
 
-        async def fake_query(page):
+        async def fake_query(page, expected_keys):
             return {"balance": 12.34}
 
         cycles = 0
